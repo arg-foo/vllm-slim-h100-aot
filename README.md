@@ -236,6 +236,82 @@ A community-maintained Grafana dashboard exists at [vllm-project/vllm](https://g
 
 ---
 
+## Logging
+
+vLLM logs through Python's standard `logging`. By default it emits human-readable lines to
+stdout. For structured JSON logs, point vLLM at a `logging.dictConfig` file via
+`VLLM_LOGGING_CONFIG_PATH`.
+
+`python-json-logger` (pinned at `4.1.0`) is baked into the image, so JSON logging works
+without installing anything at runtime — important for the airgapped runtime host. The
+image itself ships **no** logging config; you supply one at runtime so formatters stay
+customizable per deployment.
+
+### Enable JSON logging
+
+A ready-to-use sample lives at [`logging.json`](logging.json) in this repo. Mount it and
+set the env var:
+
+```bash
+docker run -d --name vllm-llama-3-70b \
+  --gpus all --ipc=host --shm-size=16g \
+  -p 8000:8000 \
+  -v /srv/models/Llama-3-70B-Instruct:/models/Llama-3-70B:ro \
+  -v $PWD/logging.json:/etc/vllm/logging.json:ro \
+  -e VLLM_LOGGING_CONFIG_PATH=/etc/vllm/logging.json \
+  vllm-slim:0.21.0 \
+  /models/Llama-3-70B \
+  --host 0.0.0.0 --port 8000 \
+  --served-model-name llama-3-70b-instruct \
+  --tensor-parallel-size 8
+```
+
+The sample formats `vllm` and `uvicorn` logs as JSON on stdout, quiets `uvicorn.access`
+noise to WARNING, and includes the worker PID (`%(process)d`) so logs from tensor-parallel
+worker processes can be split apart. Edit the fields to taste.
+
+> **Formatter class path:** use `pythonjsonlogger.json.JsonFormatter` (the canonical path
+> in `python-json-logger` 4.x). The older `pythonjsonlogger.jsonlogger.JsonFormatter` —
+> still shown in some vLLM docs — works but emits a `DeprecationWarning`.
+
+Other knobs:
+- `VLLM_LOGGING_LEVEL=DEBUG|INFO|WARNING|ERROR` — quick level change without a config file.
+- `VLLM_CONFIGURE_LOGGING=0` — disable vLLM's logging setup entirely (e.g. when you run the
+  server in-process and configure `logging` yourself).
+
+### Log rotation
+
+Rotation is the **container runtime's** job, not an in-container file handler — vLLM
+tensor-parallel runs spawn multiple worker processes that would race on a shared log file.
+Keep logs on stdout (as the sample does) and let Docker's `json-file` driver rotate them:
+
+```bash
+docker run ... \
+  --log-driver=json-file \
+  --log-opt max-size=100m \
+  --log-opt max-file=10 \
+  --log-opt compress=true \
+  vllm-slim:0.21.0 ...
+```
+
+Or make it the daemon default in `/etc/docker/daemon.json`:
+
+```json
+{
+  "log-driver": "json-file",
+  "log-opts": {"max-size": "100m", "max-file": "10", "compress": "true"}
+}
+```
+
+That caps logs at 100 MB × 10 files = 1 GB with automatic rotation and compression, all
+still visible through `docker logs` and shippable through any other log driver (fluentd,
+awslogs, gcplogs, journald, …) later.
+
+To pin a different `python-json-logger` version, rebuild with
+`--build-arg PYTHON_JSON_LOGGER_VERSION=...` (see [Updating the image](#updating-the-image)).
+
+---
+
 ## Common runtime flags
 
 | Flag | Default | Notes |

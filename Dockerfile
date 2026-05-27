@@ -93,6 +93,7 @@ ARG TORCH_VERSION=2.11.0
 ARG TORCHVISION_VERSION=0.26.0
 ARG TORCHAUDIO_VERSION=2.11.0
 ARG FLASHINFER_VERSION=0.6.8.post1
+ARG PYTHON_JSON_LOGGER_VERSION=4.1.0
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -139,7 +140,7 @@ RUN pip install --upgrade pip setuptools wheel \
  && pip install \
         flashinfer-python==${FLASHINFER_VERSION} \
         flashinfer-cubin==${FLASHINFER_VERSION} \
- && pip install /tmp/wheels/*.whl \
+ && pip install python-json-logger==${PYTHON_JSON_LOGGER_VERSION} /tmp/wheels/*.whl \
  && flashinfer show-config \
  && flashinfer download-cubin \
  && apt-get purge -y curl && apt-get autoremove -y \
